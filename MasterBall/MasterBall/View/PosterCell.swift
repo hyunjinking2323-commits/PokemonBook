@@ -28,7 +28,7 @@ class PosterCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        posterImageView.kf.cancelDownloadTask() 
+        posterImageView.kf.cancelDownloadTask()
         posterImageView.image = nil
     }
 
@@ -40,7 +40,7 @@ class PosterCell: UICollectionViewCell {
         posterImageView.kf.setImage(
             with: url,
             placeholder: UIImage(named: "placeholder"),
-            options: [.transition(.fade(0.3))]
+            options: [.transition(.fade(0.5))]
         )
     }
 }

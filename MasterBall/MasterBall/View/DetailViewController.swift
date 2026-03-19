@@ -75,8 +75,7 @@ final class DetailViewController: UIViewController {
         super.viewDidLoad()
         configureUI()
         bind()
-            // ViewModel에 데이터 요청 호출이 필요할 수 있습니다
-        detailViewModel.fetchPokemonDetailRelay()
+
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -131,36 +130,41 @@ final class DetailViewController: UIViewController {
     }
 
     func bind() {
-        detailViewModel.pokemonDetailRelay
-            .observe(on: MainScheduler.instance)
+            // 1. Input 생성: viewDidLoad 시점을 신호로 전달
+        let input = DetailViewModel.Input(
+            viewDidLoad: Observable.just(())
+        )
+
+            // 2. 변환
+        let output = detailViewModel.transform(input: input)
+
+            // 3. Output 바인딩 - 데이터 표시
+        output.pokemonDetail
             .compactMap { $0 }
-            .subscribe(onNext: { [weak self] pokemonDetail in
-                guard let self = self else { return }
-                self.no.text = "No. \(pokemonDetail.id)"
-                self.name.text = PokemonTranslator.getKoreanName(for: pokemonDetail.name)
-                self.type.text = "타입: " + pokemonDetail.types.compactMap {
+            .drive(with: self, onNext: { owner, pokemonDetail in
+                owner.no.text = "No. \(pokemonDetail.id)"
+                owner.name.text = PokemonTranslator.getKoreanName(for: pokemonDetail.name)
+                owner.type.text = "타입: " + pokemonDetail.types.compactMap {
                     PokemonTypeName(rawValue: $0.type.name)?.displayName
                 }.joined(separator: ", ")
-                self.height.text = "키: \(Float(pokemonDetail.height) / 10.0) m"
-                self.weight.text = "몸무게: \(Float(pokemonDetail.weight) / 10.0) kg"
+                owner.height.text = "키: \(Float(pokemonDetail.height) / 10.0) m"
+                owner.weight.text = "몸무게: \(Float(pokemonDetail.weight) / 10.0) kg"
 
                 if let url = URL(string: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/\(pokemonDetail.id).png") {
-                    self.imageView.kf.setImage(with: url)
+                    owner.imageView.kf.setImage(with: url)
                 }
             })
             .disposed(by: disposeBag)
 
-        detailViewModel.errorRelay
-            .observe(on: MainScheduler.instance)
-            .subscribe(onNext: { [weak self] _ in
-                let alert = UIAlertController(
-                    title: "오류",
-                    message: "포켓몬 정보를 불러오지 못했습니다.",
-                    preferredStyle: .alert
-                )
+            // 4. Output 바인딩 - 에러 처리
+        output.errorMessage
+            .drive(with: self, onNext: { owner, message in
+                let alert = UIAlertController(title: "오류", message: message, preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "확인", style: .default))
-                self?.present(alert, animated: true)
+                owner.present(alert, animated: true)
             })
             .disposed(by: disposeBag)
     }
 }
+
+

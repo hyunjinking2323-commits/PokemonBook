@@ -9,6 +9,9 @@ class MainViewController: UIViewController {
     private let disposeBag = DisposeBag()
     private let mainViewModel = MainViewModel()
 
+        // 1. 이벤트를 발생시킬 소스
+    private let fetchTriggerRelay = PublishRelay<Void>()
+
     private let logoImageView = UIImageView().then {
         $0.image = UIImage(named: "MonsterBall")
         $0.contentMode = .scaleAspectFit
@@ -22,7 +25,7 @@ class MainViewController: UIViewController {
         $0.backgroundColor = UIColor(red: 120/255, green: 30/255, blue: 30/255, alpha: 1.0)
         $0.dataSource = self
         $0.delegate = self
-        $0.prefetchDataSource = self // 무한 스크롤
+        $0.prefetchDataSource = self
     }
 
     override func viewDidLoad() {
@@ -56,21 +59,38 @@ class MainViewController: UIViewController {
     }
 
     private func bind() {
-        mainViewModel.pokemonObservable
-            .observe(on: MainScheduler.instance)
+            // 1. 뷰모델에 전달할 Input 객체 생성
+            // fetchTriggerRelay(이벤트 발생지)를 Driver로 변환하여 전달
+        let input = MainViewModel.Input(
+            fetchTrigger: fetchTriggerRelay.asDriver(onErrorJustReturn: ())
+        )
+
+            // 2. 뷰모델의 transform을 거쳐 나온 Output을 받음
+        let output = mainViewModel.transform(input: input)
+
+            // 3. Output(데이터)을 화면에 바인딩
+        output.pokemon
+            // [scan] 이전 데이터(old)와 현재 데이터(new)를 튜플로 묶어서 다음 단계로 넘겨줌
             .scan((old: [Pokemon](), new: [Pokemon]())) { acc, new in
-                (old: acc.new, new: new)   // scan으로 이전/현재 값 동시에 들고 다니기
+                    // acc.new는 직전 데이터, new는 방금 들어온 최신 데이터
+                (old: acc.new, new: new)
             }
-            .subscribe(onNext: { [weak self] (old, new) in
-                guard let self = self else { return }
-                if old.isEmpty {
-                    self.collectionView.reloadData()
+            // [drive] UI 업데이트 시작 (Main 스레드 보장)
+            .drive(with: self, onNext: { owner, data in
+                if data.old.isEmpty {
+                        // 처음 데이터를 가져왔을 때는 전체 리프레시
+                    owner.collectionView.reloadData()
                 } else {
-                    let indexPaths = (old.count..<new.count).map { IndexPath(item: $0, section: 0) }
-                    self.collectionView.insertItems(at: indexPaths)
+                        // 늘어난 개수만큼만 IndexPath를 계산해서 부분 삽입
+                        // 화면이 위로 튀지 않고 부드럽게 아래로 붙음
+                    let indexPaths = (data.old.count..<data.new.count).map { IndexPath(item: $0, section: 0) }
+                    owner.collectionView.insertItems(at: indexPaths)
                 }
             })
             .disposed(by: disposeBag)
+
+            // 4. 앱 시작 시 첫 데이터를 불러오기 위해 수동으로 신호 한 번 보내기
+        fetchTriggerRelay.accept(())
     }
     private func createLayout() -> UICollectionViewLayout {
         let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1/3), heightDimension: .fractionalHeight(1.0))
@@ -97,9 +117,12 @@ extension MainViewController: UICollectionViewDelegate {
         let detailVC = DetailViewController(pokemon: pokemon)
         navigationController?.pushViewController(detailVC, animated: true)
     }
+
+        // 스크롤이 끝에 닿으려 할 때 호출되는 대리자 메서드
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if scrollView.contentOffset.y > scrollView.contentSize.height - scrollView.frame.height - 100 {
-            mainViewModel.fetchPokemon()
+                //  뷰모델 함수를 직접 호출하지 않고, Relay에 값을 넣어 '신호'만 보냄
+            fetchTriggerRelay.accept(())
         }
     }
 }
@@ -107,7 +130,6 @@ extension MainViewController: UICollectionViewDelegate {
     // MARK: - DataSource & Prefetching
 extension MainViewController: UICollectionViewDataSource, UICollectionViewDataSourcePrefetching {
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-            // try? value() 대신 깔끔하게 접근
         return mainViewModel.currentPokemons.count
     }
 
@@ -117,25 +139,16 @@ extension MainViewController: UICollectionViewDataSource, UICollectionViewDataSo
         }
 
         let pokemons = mainViewModel.currentPokemons
-        
-
-            // 인덱스 초과 방지 안전망
         guard indexPath.item < pokemons.count else { return cell }
 
-        let pokemon = pokemons[indexPath.item]
-
-
-        cell.configure(with: pokemon)
+        cell.configure(with: pokemons[indexPath.item])
         return cell
     }
 
     func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
         let currentCount = mainViewModel.currentPokemons.count
-
-            // 마지막에서 4번째 아이템에 도달하면 패치
         if indexPaths.contains(where: { $0.item >= currentCount - 4 }) {
-            mainViewModel.fetchPokemon()
+            fetchTriggerRelay.accept(())
         }
     }
 }
-
