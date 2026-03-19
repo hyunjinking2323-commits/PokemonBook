@@ -129,4 +129,4 @@ self.hasNextPage = !pokemonResponse.results.isEmpty
 ```swift
 self.hasNextPage = pokemonResponse.results.count == self.limit
 ```
-제공해주신 양식과 동일한 스타일로 작성했습니다. 혹시 수정하고 싶은 내용 있으면 말씀해주세요!
+
