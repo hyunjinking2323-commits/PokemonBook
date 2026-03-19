@@ -48,7 +48,7 @@ MasterBall/
 
 ---
 
-## ⚠️ 코드 점검 결과
+## ⚠️ AI 코드 점검 결과
 
 ### 1. `NetworkManger` 오타
 **파일:** `NetworkManger.swift`  
